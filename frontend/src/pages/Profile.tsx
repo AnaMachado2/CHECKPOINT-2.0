@@ -78,6 +78,8 @@ const TABS = [
   { id: "overview", label: "Visão Geral" },
   { id: "reviews", label: "Minhas Avaliações" },
   { id: "lists", label: "Minhas Listas" },
+  { id: "followers", label: "Seguidores" },
+  { id: "following", label: "Seguindo" }
 ];
 
 // ============ COMPONENTE PRINCIPAL ============
@@ -102,10 +104,16 @@ const Profile = () => {
 
 
   // Estados de Formulário
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<{
+    nm_usuario: string;
+    email_usuario: string;
+    senha?: string;
+    foto_perfil?: File | null;
+  }>({
     nm_usuario: "",
     email_usuario: "",
     senha: "",
+    foto_perfil: null
   });
   const [listTitle, setListTitle] = useState("");
   const [listDescription, setListDescription] = useState("");
@@ -163,6 +171,47 @@ const Profile = () => {
   const filteredGames = availableGames.filter((game: Game) =>
     game.nm_jogo.toLowerCase().includes(gameSearchQuery.toLowerCase())
   );
+
+  const { data: isFollowing = false, isLoading: loadingFollow } = useQuery({
+    queryKey: ["isFollowing", profileId],
+    queryFn: () => usersService.checkIsFollowing(Number(profileId)),
+    enabled: !!profileId && !!currentUser && !isOwnProfile,
+  });
+
+  const { data: followers = [] } = useQuery<ProfileUser[]>({
+    queryKey: ["followers", profileId],
+    queryFn: () => usersService.getFollowers(Number(profileId)),
+    enabled: !!profileId && activeTab === "followers",
+  });
+
+  const { data: following = [] } = useQuery<ProfileUser[]>({
+    queryKey: ["following", profileId],
+    queryFn: () => usersService.getFollowing(Number(profileId)),
+    enabled: !!profileId && activeTab === "following",
+  });
+
+  const followMutation = useMutation({
+    mutationFn: () => usersService.followUser(Number(profileId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isFollowing", profileId] });
+      queryClient.invalidateQueries({ queryKey: ["followers", profileId] });
+      toast({ title: "Sucesso!", description: `Você curtiu o perfil do(a) ${profileUser?.nm_usuario}` });
+    }
+  });
+
+  const unfollowMutation = useMutation({
+    mutationFn: () => usersService.unfollowUser(Number(profileId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isFollowing", profileId] });
+      queryClient.invalidateQueries({ queryKey: ["followers", profileId] });
+      toast({ title: "Aviso", description: `Você deixou de seguir ${profileUser?.nm_usuario}` });
+    }
+  });
+
+  const handleToggleFollow = () => {
+    if (isFollowing) unfollowMutation.mutate();
+    else followMutation.mutate();
+  };
 
   // ============ MUTATIONS ============
   // Mutações de Perfil (Manter)
@@ -315,6 +364,7 @@ const Profile = () => {
       nm_usuario: profileUser.nm_usuario,
       email_usuario: profileUser.email_usuario,
       senha: "",
+      foto_perfil: null
     });
     setIsEditOpen(true);
   };
@@ -345,6 +395,10 @@ const Profile = () => {
 
     if (editForm.senha && editForm.senha.trim()) {
       updateData.senha = editForm.senha;
+    }
+
+    if (editForm.foto_perfil) {
+      updateData.foto_perfil = editForm.foto_perfil;
     }
 
     updateMutation.mutate(updateData);
@@ -477,8 +531,12 @@ const Profile = () => {
         {/* HEADER DO PERFIL */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-8 mb-14">
           <div className="relative">
-            <div className="w-28 h-28 rounded-full bg-[#0d241a] border-4 border-[#2dd4bf] flex items-center justify-center shadow-2xl shadow-[#2dd4bf]/30">
-              <User className="w-16 h-16 text-[#2dd4bf]" />
+            <div className="w-28 h-28 rounded-full bg-[#0d241a] border-4 border-[#2dd4bf] flex items-center justify-center shadow-2xl shadow-[#2dd4bf]/30 overflow-hidden">
+              {profileUser.foto_perfil ? (
+                <img src={profileUser.foto_perfil} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-16 h-16 text-[#2dd4bf]" />
+              )}
             </div>
             {profileUser.tipo_usuario === "admin" && (
               <div className="absolute -bottom-2 -right-2 bg-[#2dd4bf] text-black text-xs font-bold px-3 py-1 rounded-full shadow-xl">
@@ -505,7 +563,7 @@ const Profile = () => {
             </div>
           </div>
 
-          {isOwnProfile && (
+          {isOwnProfile ? (
             <Button
               onClick={openEditModal}
               size="lg"
@@ -514,7 +572,16 @@ const Profile = () => {
               <Edit2 className="w-6 h-6 mr-3" />
               Editar Perfil
             </Button>
-          )}
+          ) : currentUser ? (
+            <Button
+               onClick={handleToggleFollow}
+               size="lg"
+               className={`border-2 font-bold text-lg px-8 transition-all duration-300 shadow-lg ${isFollowing ? 'bg-[#0d241a] border-[#2dd4bf] text-[#2dd4bf] hover:bg-red-500/20 hover:text-red-500 hover:border-red-500' : 'bg-[#2dd4bf] hover:bg-[#0d9488] text-black border-[#2dd4bf]'}`}
+               disabled={followMutation.isPending || unfollowMutation.isPending || loadingFollow}
+            >
+               {isFollowing ? 'Deixar de Seguir' : 'Seguir'}
+            </Button>
+          ) : null}
         </div>
 
         {/* TABS */}
@@ -598,57 +665,77 @@ const Profile = () => {
                     >
                       <Card className="bg-[#0d241a]/60 border border-[#2dd4bf]/30 hover:border-[#2dd4bf]/70 transition-all duration-300 p-6 rounded-2xl">
                         
-                        <div className="flex justify-between items-start">
-                           {/* Nome do Jogo como Link */}
-                            <Link to={`/game/${review.id_jogo}`} className="flex-1 mr-4">
-                                <h3 className="font-pixel text-xl text-white hover:text-[#2dd4bf] transition-colors line-clamp-1">
-                                    {review.nm_jogo}
-                                </h3>
-                            </Link>
+                        <div className="flex gap-6">
+                          {/* Thumbnail do Jogo */}
+                          <Link to={`/game/${review.id_jogo}`} className="flex-shrink-0 w-24 h-36 rounded-lg overflow-hidden border border-[#2dd4bf]/30 shadow-lg group">
+                              <img 
+                                src={gamesService.getImageUrl(review.id_jogo)} 
+                                alt={review.nm_jogo}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full flex flex-col justify-center items-center bg-[#0a1810]/80"><span class="text-xs text-[#2dd4bf] font-pixel">POSTER</span></div>';
+                                }}
+                              />
+                          </Link>
 
-                            {/* Ações e Nota */}
-                            <div className="flex items-center gap-3">
-                                {/* Nota */}
-                                <div className="flex items-center text-[#2dd4bf] text-lg font-bold">
-                                    {review.nota.toFixed(1)}
-                                    <Star className="w-5 h-5 ml-1 fill-[#2dd4bf]" />
-                                </div>
-                                
-                                {/* Ações (Apenas para o próprio perfil) */}
-                                {isOwnProfile && (
-                                    <div className="flex gap-1 ml-2">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => openEditReviewModal(review)}
-                                            className="h-8 w-8 text-muted-foreground hover:text-[#2dd4bf]"
-                                            disabled={updateReviewMutation.isPending}
-                                        >
-                                            <Edit2 className="w-4 h-4" />
-                                        </Button>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={(e) => handleDeleteReview(review.id_avaliacao, e)}
-                                            className="h-8 w-8 text-muted-foreground hover:text-red-500"
-                                            disabled={deleteReviewMutation.isPending}
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </Button>
+                          {/* Detalhes da Avaliação */}
+                          <div className="flex-1">
+                            <div className="flex justify-between items-start">
+                                {/* Nome do Jogo como Link */}
+                                <Link to={`/game/${review.id_jogo}`} className="flex-1 mr-4">
+                                    <h3 className="font-pixel text-2xl text-white hover:text-[#2dd4bf] transition-colors line-clamp-2">
+                                        {review.nm_jogo}
+                                    </h3>
+                                </Link>
+
+                                {/* Ações e Nota */}
+                                <div className="flex items-center gap-3">
+                                    {/* Nota */}
+                                    <div className="flex items-center text-[#2dd4bf] text-xl font-bold bg-[#0d241a] px-3 py-1 rounded-full border border-[#2dd4bf]/40">
+                                        {review.nota.toFixed(1)}
+                                        <Star className="w-5 h-5 ml-1 fill-[#2dd4bf]" />
                                     </div>
-                                )}
+                                    
+                                    {/* Ações (Apenas para o próprio perfil) */}
+                                    {isOwnProfile && (
+                                        <div className="flex gap-1 ml-2">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => openEditReviewModal(review)}
+                                                className="h-9 w-9 text-muted-foreground hover:text-[#2dd4bf] hover:bg-[#2dd4bf]/10 rounded-full"
+                                                disabled={updateReviewMutation.isPending}
+                                            >
+                                                <Edit2 className="w-4 h-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={(e) => handleDeleteReview(review.id_avaliacao, e)}
+                                                className="h-9 w-9 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-full"
+                                                disabled={deleteReviewMutation.isPending}
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
+                            
+                            {/* Comentário */}
+                            <div className="mt-4 bg-[#0a1810]/50 p-4 rounded-xl border border-[#2dd4bf]/10 relative">
+                                <p className="text-gray-300 italic text-lg leading-relaxed">
+                                    "{review.comentario || 'Sem comentário'}"
+                                </p>
+                            </div>
+                            
+                            {/* Data */}
+                            <p className="text-sm font-medium text-gray-500 mt-4 text-right">
+                              Avaliado em: {formatDate(review.dt_avaliacao)}
+                            </p>
+                          </div>
                         </div>
-                        
-                        {/* Comentário */}
-                        <p className="text-muted-foreground mt-3 italic line-clamp-3">
-                            "{review.comentario || 'Sem comentário'}"
-                        </p>
-                        
-                        {/* Data */}
-                        <p className="text-xs text-gray-500 mt-3 text-right">
-                          Avaliado em: {formatDate(review.dt_avaliacao)}
-                        </p>
                       </Card>
                     </div>
                   ))}
@@ -744,6 +831,58 @@ const Profile = () => {
               )}
             </div>
           )}
+
+          {/* SEGUIDORES */}
+          {activeTab === "followers" && (
+            <div className="max-w-2xl">
+              <h2 className="font-pixel text-3xl text-[#2dd4bf] mb-8">Seguidores ({followers.length})</h2>
+              {followers.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground"><p className="text-xl">Nenhum seguidor ainda.</p></div>
+              ) : (
+                <div className="grid gap-4">
+                  {followers.map(f => (
+                    <Link key={f.id_usuario} to={`/profile/${f.id_usuario}`}>
+                      <Card className="p-4 bg-[#0d241a]/60 border border-[#2dd4bf]/30 hover:border-[#2dd4bf] flex items-center gap-4 transition-all">
+                        <div className="w-12 h-12 rounded-full overflow-hidden bg-[#2dd4bf]/20 flex items-center justify-center">
+                          {f.foto_perfil ? <img src={f.foto_perfil} alt="Avatar" className="w-full h-full object-cover" /> : <User className="text-[#2dd4bf]" />}
+                        </div>
+                        <div>
+                          <h4 className="text-white font-bold">{f.nm_usuario}</h4>
+                          <p className="text-sm text-gray-400">Amigo na plataforma</p>
+                        </div>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SEGUINDO */}
+          {activeTab === "following" && (
+            <div className="max-w-2xl">
+              <h2 className="font-pixel text-3xl text-[#2dd4bf] mb-8">Seguindo ({following.length})</h2>
+              {following.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground"><p className="text-xl">Não está seguindo ninguém.</p></div>
+              ) : (
+                <div className="grid gap-4">
+                  {following.map(f => (
+                    <Link key={f.id_usuario} to={`/profile/${f.id_usuario}`}>
+                      <Card className="p-4 bg-[#0d241a]/60 border border-[#2dd4bf]/30 hover:border-[#2dd4bf] flex items-center gap-4 transition-all">
+                        <div className="w-12 h-12 rounded-full overflow-hidden bg-[#2dd4bf]/20 flex items-center justify-center">
+                          {f.foto_perfil ? <img src={f.foto_perfil} alt="Avatar" className="w-full h-full object-cover" /> : <User className="text-[#2dd4bf]" />}
+                        </div>
+                        <div>
+                          <h4 className="text-white font-bold">{f.nm_usuario}</h4>
+                          <p className="text-sm text-gray-400">Conhece das paradas.</p>
+                        </div>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -798,10 +937,26 @@ const Profile = () => {
               <Input
                 id="edit-password"
                 type="password"
-                value={editForm.senha}
+                value={editForm.senha || ""}
                 onChange={(e) => setEditForm(prev => ({
                   ...prev,
                   senha: e.target.value
+                }))}
+                className="bg-[#0d241a] border-[#2dd4bf]/30 text-white mt-2"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="edit-avatar" className="text-[#2dd4bf] font-bold">
+                Foto de Perfil (Opcional)
+              </Label>
+              <Input
+                id="edit-avatar"
+                type="file"
+                accept="image/*"
+                onChange={(e) => setEditForm(prev => ({
+                  ...prev,
+                  foto_perfil: e.target.files?.[0] || null
                 }))}
                 className="bg-[#0d241a] border-[#2dd4bf]/30 text-white mt-2"
               />

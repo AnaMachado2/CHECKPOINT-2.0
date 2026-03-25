@@ -41,10 +41,10 @@ export const LoginModal = ({ isOpen, onClose, onSwitchToRegister, onLoginSuccess
       onLoginSuccess();
       onClose();
       setFormData({ email_usuario: '', senha_usuario: '' });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Erro no login",
-        description: error.message || "Credenciais inválidas",
+        description: error.response?.data?.error || error.message || "Credenciais inválidas",
         variant: "destructive",
       });
     } finally {
@@ -176,10 +176,10 @@ export const RegisterModal = ({ isOpen, onClose, onSwitchToLogin }: RegisterModa
       setTimeout(() => {
         onSwitchToLogin();
       }, 1500);
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Erro no registro",
-        description: error.message || "Email já cadastrado",
+        description: error.response?.data?.error || error.message || "Email já cadastrado",
         variant: "destructive",
       });
     } finally {

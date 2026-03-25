@@ -17,6 +17,7 @@ export interface User {
   nm_usuario: string;
   email_usuario: string;
   tipo_usuario: 'user' | 'admin';
+  foto_perfil?: string;
 }
 
 export interface LoginResponse {

@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { User, LogOut, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authService } from "@/services/auth";
-import { LoginModal, RegisterModal } from "@/components/AuthModals";
+import { LoginModal, RegisterModal } from "@/components/Authmodal";
 
 export const Header = () => {
   const [user, setUser] = useState(authService.getCurrentUser());
@@ -72,7 +72,11 @@ export const Header = () => {
             {user ? (
               <>
                 <div className="hidden md:flex items-center gap-3 bg-[#0d241a] border border-[#2dd4bf]/40 rounded-lg px-4 py-2">
-                  <User className="w-4 h-4 text-[#2dd4bf]" />
+                  {user.foto_perfil && user.foto_perfil.length > 0 ? (
+                    <img src={user.foto_perfil} alt="Avatar" className="w-5 h-5 rounded-full object-cover" />
+                  ) : (
+                    <User className="w-4 h-4 text-[#2dd4bf]" />
+                  )}
                   <span className="text-[#f0f7f4] font-medium text-sm">{user.nm_usuario}</span>
                   {user.tipo_usuario === "admin" && (
                     <span className="bg-[#2dd4bf] text-black text-xs px-2 py-0.5 rounded-full font-bold">
